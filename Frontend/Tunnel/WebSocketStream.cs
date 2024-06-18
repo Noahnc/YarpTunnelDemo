@@ -6,7 +6,7 @@ internal class WebSocketStream : Stream, IValueTaskSource<object?>, ICloseable
 {
     private readonly WebSocket _ws;
     private ManualResetValueTaskSourceCore<object?> _tcs = new() { RunContinuationsAsynchronously = true };
-    private readonly CancellationTokenSource _disposeTokenSource = new();
+    private  CancellationTokenSource _disposeTokenSource = new();
     private readonly object _sync = new();
 
     public WebSocketStream(WebSocket ws)
@@ -112,6 +112,10 @@ internal class WebSocketStream : Stream, IValueTaskSource<object?>, ICloseable
             
             // Cancel the token to signal the read loop to stop
             _disposeTokenSource.Cancel();
+            _disposeTokenSource.Dispose();
+
+            // Create a fresh token source 
+            _disposeTokenSource = new();
 
             // This might seem evil but we're using dispose to know if the stream
             // has been given discarded by http client. We trigger the continuation and take back ownership
