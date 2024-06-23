@@ -7,6 +7,7 @@ internal class WebSocketStream : Stream, IValueTaskSource<object?>, ICloseable
     private readonly WebSocket _ws;
     private ManualResetValueTaskSourceCore<object?> _tcs = new() { RunContinuationsAsynchronously = true };
     private readonly object _sync = new();
+    private int _disposeCount;
 
     public WebSocketStream(WebSocket ws)
     {
@@ -62,7 +63,15 @@ internal class WebSocketStream : Stream, IValueTaskSource<object?>, ICloseable
 
     public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
+        var currentDisposeCount = _disposeCount;
         var result = await _ws.ReceiveAsync(buffer, cancellationToken);
+        
+        // If the read is a zero-byte read and the stream has been disposed since the read started,
+        // we throw an exception to stop the caller from messing with the stream
+        if (buffer.Length == 0 && currentDisposeCount != _disposeCount)
+        {
+            throw new OperationCanceledException("Stream has been disposed.");
+        }
 
         if (result.MessageType == WebSocketMessageType.Close)
         {
@@ -106,6 +115,9 @@ internal class WebSocketStream : Stream, IValueTaskSource<object?>, ICloseable
             {
                 return;
             }
+            
+            // Increase the disposed count to throw exceptions in pending zero byte reads that started before the stream was disposed
+            _disposeCount++;
 
             // This might seem evil but we're using dispose to know if the stream
             // has been given discarded by http client. We trigger the continuation and take back ownership
